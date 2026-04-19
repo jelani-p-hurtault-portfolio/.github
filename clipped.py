@@ -67,3 +67,29 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+"""
+References
+
+Libraries — Official Documentation
+- NumPy: https://numpy.org/doc/stable/
+- NumPy linspace: https://numpy.org/doc/stable/reference/generated/numpy.linspace.html
+- NumPy sin: https://numpy.org/doc/stable/reference/generated/numpy.sin.html
+- NumPy clip: https://numpy.org/doc/stable/reference/generated/numpy.clip.html
+- SciPy wavfile.write: https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.wavfile.write.html
+- sounddevice: https://python-sounddevice.readthedocs.io/en/latest/
+
+Audio & Signal Processing Concepts
+- WAV file format: https://en.wikipedia.org/wiki/WAV
+- Sine wave: https://en.wikipedia.org/wiki/Sine_wave
+- Hard clipping / fuzz effect: https://en.wikipedia.org/wiki/Clipping_(audio)
+- Digital audio sampling: https://en.wikipedia.org/wiki/Sampling_(signal_processing)
+- 16-bit audio / PCM: https://en.wikipedia.org/wiki/Pulse-code_modulation
+
+Python Language References
+- f-strings: https://docs.python.org/3/tutorial/inputoutput.html#formatted-string-literals
+- Type hints: https://docs.python.org/3/library/typing.html
+- if __name__ == "__main__": https://docs.python.org/3/reference/__main__.html
+- Integer division //: https://docs.python.org/3/reference/expressions.html#binary-arithmetic-operations
+"""
