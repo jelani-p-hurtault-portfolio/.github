@@ -1,12 +1,13 @@
-# modem_decoder.py
+# modem_decoder.p
+# Jelani P Hurtault
+# CS 516
 # Decodes a secret message hidden in a WAV audio file.
-# The audio is encoded using the Bell 103 modem protocol —
-# basically the same "beep-boop" sounds old dial-up modems made.
+# The audio is encoded using the Bell 103 modem protocol
+
 
 import wave
 import numpy as np
 
-# ── What frequencies are we listening for? ──────────────────────────────────
 # The modem uses two tones to talk. Think of it like Morse code, but with
 # sound pitches instead of dots and dashes:
 #   - A HIGH tone (2225 Hz) means the bit is a 1
@@ -152,8 +153,6 @@ def decode_message(filename):
     message = "".join(message_chars)
     return message
 
-
-# ── Run it! ─────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     input_file  = "message.wav"
     output_file = "MESSAGE.txt"
