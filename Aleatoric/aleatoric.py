@@ -77,6 +77,10 @@ def get_chord_notes(root_midi, roman):
     chord_root = scale[degree]
     return [chord_root + i for i in CHORD_INTERVALS[roman]]
 
+def get_chord_root(root_midi, roman):
+    scale = get_scale_notes(root_midi)
+    return scale[ROMAN_TO_SCALE[roman]]
+
 def pick_melody_note(chord_notes, scale_notes):
     if random.random() < 0.8:
         return random.choice(chord_notes)
@@ -91,6 +95,14 @@ def generate_melody(song, key):
             measure_melody = [pick_melody_note(chord_notes, scale) for _ in range(8)]
             all_notes.append(measure_melody)
     return all_notes
+
+def generate_bass_notes(song, key):
+    bass_notes = []
+    for measure_chords in song:
+        for roman in measure_chords:
+            chord_root = get_chord_root(key, roman)
+            bass_notes.append(chord_root - 24)
+    return bass_notes
 
 def sawtooth_wave(freq, duration, amplitude=0.3):
     num_samples = int(SAMPLE_RATE * duration)
@@ -108,12 +120,22 @@ def render_melody(melody, tempo):
             chunks.append(sawtooth_wave(freq, eighth_duration))
     return np.concatenate(chunks)
 
+def render_bass(bass_notes, tempo):
+    beat_duration = 60.0 / tempo
+    measure_duration = beat_duration * 4.0
+    chunks = []
+    for midi_note in bass_notes:
+        freq = midi_to_freq(midi_note)
+        chunks.append(sawtooth_wave(freq, measure_duration, amplitude=0.2))
+    return np.concatenate(chunks)
+
 def save_wav(filename, audio):
     data = (audio * 32767).astype(np.int16)
     wavfile.write(filename, SAMPLE_RATE, data)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--output", type=str, default=None)
+parser.add_argument("--bass", action="store_true")
 args = parser.parse_args()
 
 key = pick_key()
@@ -128,7 +150,17 @@ print("Key:", midi_to_name(key))
 print("Tempo:", tempo, "BPM")
 print("Structure:", structure)
 
-audio = render_melody(melody, tempo)
+melody_audio = render_melody(melody, tempo)
+
+if args.bass:
+    bass_notes = generate_bass_notes(song, key)
+    bass_audio = render_bass(bass_notes, tempo)
+    min_len = min(len(melody_audio), len(bass_audio))
+    audio = melody_audio[:min_len] + bass_audio[:min_len]
+else:
+    audio = melody_audio
+
+audio = np.clip(audio, -1.0, 1.0)
 
 if args.output:
     save_wav(args.output, audio)
