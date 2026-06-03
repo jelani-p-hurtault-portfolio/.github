@@ -96,6 +96,23 @@ def generate_melody(song, key):
             all_notes.append(measure_melody)
     return all_notes
 
+def generate_harmony(melody, song, key):
+    harmony = []
+    measure_index = 0
+    for measure_chords in song:
+        for roman in measure_chords:
+            chord_notes = get_chord_notes(key, roman)
+            measure_harmony = []
+            for mel_note in melody[measure_index]:
+                below = [n for n in chord_notes if n < mel_note]
+                if below:
+                    measure_harmony.append(max(below))
+                else:
+                    measure_harmony.append(chord_notes[0] - 12)
+            harmony.append(measure_harmony)
+            measure_index += 1
+    return harmony
+
 def generate_bass_notes(song, key):
     bass_notes = []
     for measure_chords in song:
@@ -104,20 +121,32 @@ def generate_bass_notes(song, key):
             bass_notes.append(chord_root - 24)
     return bass_notes
 
+def generate_drum_pattern(tempo):
+    eighth_count = 8
+    pattern = [random.choice([True, False]) for _ in range(eighth_count)]
+    pattern[0] = True
+    return pattern
+
 def sawtooth_wave(freq, duration, amplitude=0.3):
     num_samples = int(SAMPLE_RATE * duration)
     t = np.linspace(0, duration, num_samples, endpoint=False)
     wave = 2.0 * (t * freq - np.floor(t * freq + 0.5))
     return (wave * amplitude).astype(np.float32)
 
-def render_melody(melody, tempo):
+def noise_burst(duration, amplitude=0.15):
+    num_samples = int(SAMPLE_RATE * duration)
+    noise = np.random.uniform(-1.0, 1.0, num_samples)
+    decay = np.exp(-np.linspace(0, 8, num_samples))
+    return (noise * decay * amplitude).astype(np.float32)
+
+def render_track(note_grid, tempo, amplitude=0.3):
     beat_duration = 60.0 / tempo
     eighth_duration = beat_duration / 2.0
     chunks = []
-    for measure in melody:
+    for measure in note_grid:
         for midi_note in measure:
             freq = midi_to_freq(midi_note)
-            chunks.append(sawtooth_wave(freq, eighth_duration))
+            chunks.append(sawtooth_wave(freq, eighth_duration, amplitude))
     return np.concatenate(chunks)
 
 def render_bass(bass_notes, tempo):
@@ -129,6 +158,25 @@ def render_bass(bass_notes, tempo):
         chunks.append(sawtooth_wave(freq, measure_duration, amplitude=0.2))
     return np.concatenate(chunks)
 
+def render_drums(total_measures, pattern, tempo):
+    beat_duration = 60.0 / tempo
+    eighth_duration = beat_duration / 2.0
+    chunks = []
+    for _ in range(total_measures):
+        for hit in pattern:
+            if hit:
+                chunks.append(noise_burst(eighth_duration))
+            else:
+                chunks.append(np.zeros(int(SAMPLE_RATE * eighth_duration), dtype=np.float32))
+    return np.concatenate(chunks)
+
+def mix_tracks(tracks):
+    max_len = max(len(t) for t in tracks)
+    mixed = np.zeros(max_len, dtype=np.float32)
+    for t in tracks:
+        mixed[:len(t)] += t
+    return np.clip(mixed, -1.0, 1.0)
+
 def save_wav(filename, audio):
     data = (audio * 32767).astype(np.int16)
     wavfile.write(filename, SAMPLE_RATE, data)
@@ -136,6 +184,8 @@ def save_wav(filename, audio):
 parser = argparse.ArgumentParser()
 parser.add_argument("--output", type=str, default=None)
 parser.add_argument("--bass", action="store_true")
+parser.add_argument("--harmony", action="store_true")
+parser.add_argument("--drums", action="store_true")
 args = parser.parse_args()
 
 key = pick_key()
@@ -150,17 +200,23 @@ print("Key:", midi_to_name(key))
 print("Tempo:", tempo, "BPM")
 print("Structure:", structure)
 
-melody_audio = render_melody(melody, tempo)
+total_measures = sum(len(chords) for chords in song)
+
+tracks = [render_track(melody, tempo, amplitude=0.3)]
+
+if args.harmony:
+    harmony = generate_harmony(melody, song, key)
+    tracks.append(render_track(harmony, tempo, amplitude=0.2))
 
 if args.bass:
     bass_notes = generate_bass_notes(song, key)
-    bass_audio = render_bass(bass_notes, tempo)
-    min_len = min(len(melody_audio), len(bass_audio))
-    audio = melody_audio[:min_len] + bass_audio[:min_len]
-else:
-    audio = melody_audio
+    tracks.append(render_bass(bass_notes, tempo))
 
-audio = np.clip(audio, -1.0, 1.0)
+if args.drums:
+    pattern = generate_drum_pattern(tempo)
+    tracks.append(render_drums(total_measures, pattern, tempo))
+
+audio = mix_tracks(tracks)
 
 if args.output:
     save_wav(args.output, audio)
