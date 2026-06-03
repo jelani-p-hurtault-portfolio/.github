@@ -36,9 +36,7 @@ CHORD_INTERVALS = {
 }
 
 def pick_key():
-    a3_midi = 57
-    a4_midi = 69
-    return random.randint(a3_midi, a4_midi)
+    return random.randint(57, 69)
 
 def pick_tempo():
     return random.randint(80, 160)
@@ -74,16 +72,37 @@ def get_chord_notes(root_midi, roman):
     intervals = CHORD_INTERVALS[roman]
     return [chord_root + i for i in intervals]
 
+def pick_melody_note(chord_notes, scale_notes):
+    if random.random() < 0.8:
+        return random.choice(chord_notes)
+    else:
+        return random.choice(scale_notes)
+
+def generate_melody(song, key):
+    scale = get_scale_notes(key)
+    all_notes = []
+    for measure_chords in song:
+        for roman in measure_chords:
+            chord_notes = get_chord_notes(key, roman)
+            measure_melody = []
+            for _ in range(8):
+                note = pick_melody_note(chord_notes, scale)
+                measure_melody.append(note)
+            all_notes.append(measure_melody)
+    return all_notes
+
 key = pick_key()
 tempo = pick_tempo()
 structure = pick_structure()
 labels = get_labels(structure)
 loop_map = assign_loops(labels)
 song = build_song(structure, loop_map)
+melody = generate_melody(song, key)
 
 print("Key:", midi_to_name(key))
 print("Tempo:", tempo, "BPM")
 print("Structure:", structure)
 print()
-for i, measure_chords in enumerate(song):
-    print(f"Measure group {i+1}: {measure_chords}")
+for i, measure in enumerate(melody):
+    names = [midi_to_name(n) for n in measure]
+    print(f"Measure {i+1}: {names}")
