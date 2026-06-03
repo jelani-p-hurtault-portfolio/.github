@@ -1,6 +1,8 @@
 import random
+import argparse
 import numpy as np
 import sounddevice as sd
+import scipy.io.wavfile as wavfile
 
 SONG_STRUCTURES = ["AABB/CC", "ABAB/CD", "AB/CDDD"]
 
@@ -90,8 +92,8 @@ def generate_melody(song, key):
             all_notes.append(measure_melody)
     return all_notes
 
-def sawtooth_wave(freq, duration, sample_rate, amplitude=0.3):
-    num_samples = int(sample_rate * duration)
+def sawtooth_wave(freq, duration, amplitude=0.3):
+    num_samples = int(SAMPLE_RATE * duration)
     t = np.linspace(0, duration, num_samples, endpoint=False)
     wave = 2.0 * (t * freq - np.floor(t * freq + 0.5))
     return (wave * amplitude).astype(np.float32)
@@ -99,13 +101,20 @@ def sawtooth_wave(freq, duration, sample_rate, amplitude=0.3):
 def render_melody(melody, tempo):
     beat_duration = 60.0 / tempo
     eighth_duration = beat_duration / 2.0
-    audio_chunks = []
+    chunks = []
     for measure in melody:
         for midi_note in measure:
             freq = midi_to_freq(midi_note)
-            chunk = sawtooth_wave(freq, eighth_duration, SAMPLE_RATE)
-            audio_chunks.append(chunk)
-    return np.concatenate(audio_chunks)
+            chunks.append(sawtooth_wave(freq, eighth_duration))
+    return np.concatenate(chunks)
+
+def save_wav(filename, audio):
+    data = (audio * 32767).astype(np.int16)
+    wavfile.write(filename, SAMPLE_RATE, data)
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--output", type=str, default=None)
+args = parser.parse_args()
 
 key = pick_key()
 tempo = pick_tempo()
@@ -120,5 +129,10 @@ print("Tempo:", tempo, "BPM")
 print("Structure:", structure)
 
 audio = render_melody(melody, tempo)
-sd.play(audio, SAMPLE_RATE)
-sd.wait()
+
+if args.output:
+    save_wav(args.output, audio)
+    print("Saved to", args.output)
+else:
+    sd.play(audio, SAMPLE_RATE)
+    sd.wait()
