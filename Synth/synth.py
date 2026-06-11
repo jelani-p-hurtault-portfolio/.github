@@ -5,9 +5,10 @@ import threading
 import argparse
 
 SAMPLE_RATE = 48000
-AMPLITUDE = 0.708
+AMPLITUDE = 0.708  # -3dBFS
 BLOCK_SIZE = 256
 
+# ADSR settings in milliseconds
 ATTACK_MS = 10
 DECAY_MS = 50
 SUSTAIN_LEVEL = 0.7
@@ -20,12 +21,14 @@ release_samples = int(SAMPLE_RATE * RELEASE_MS / 1000)
 lock = threading.Lock()
 waveform = "sawtooth"
 add_noise = False
-voices = {}
+voices = {}  # one entry per active note
 
 def midi_to_freq(midi_note):
+    # standard MIDI to Hz formula
     return 440.0 * (2.0 ** ((midi_note - 69) / 12.0))
 
 def get_sample(phase, waveform):
+    # pick the wave shape based on the flag passed in
     if waveform == "sine":
         return np.sin(2.0 * np.pi * phase)
     elif waveform == "square":
@@ -38,19 +41,23 @@ def get_sample(phase, waveform):
 def get_envelope_amp(v):
     pos = v["env_pos"]
 
+    # if key is released, fade out from wherever we are
     if v["releasing"]:
         progress = pos / max(release_samples, 1)
         amp = v["release_amp"] * (1.0 - progress)
         return max(amp, 0.0), pos >= release_samples
 
+    # fade in
     if pos < attack_samples:
         return pos / max(attack_samples, 1), False
 
+    # fade down to sustain level
     pos2 = pos - attack_samples
     if pos2 < decay_samples:
         amp = 1.0 - (1.0 - SUSTAIN_LEVEL) * (pos2 / max(decay_samples, 1))
         return amp, False
 
+    # hold at sustain until key is released
     return SUSTAIN_LEVEL, False
 
 def audio_callback(outdata, frames, time, status):
@@ -77,9 +84,12 @@ def audio_callback(outdata, frames, time, status):
                 v["env_pos"] += 1
 
                 output[i] += sample * amp * v["velocity"] * AMPLITUDE
+
+                # advance phase and wrap it back to 0-1
                 v["phase"] += v["freq"] / SAMPLE_RATE
                 v["phase"] -= np.floor(v["phase"])
 
+        # clean up notes that finished their release
         for note in finished:
             del voices[note]
 
@@ -88,6 +98,7 @@ def audio_callback(outdata, frames, time, status):
 
 def note_start(midi_note, velocity):
     with lock:
+        # create a new voice for this note
         voices[midi_note] = {
             "freq": midi_to_freq(midi_note),
             "phase": 0.0,
@@ -102,6 +113,7 @@ def note_stop(midi_note, velocity=64):
     global release_samples
     with lock:
         if midi_note in voices:
+            # softer key release = longer fade out
             release_ms = 10 + (127 - velocity) * 2
             release_samples = int(SAMPLE_RATE * release_ms / 1000)
             voices[midi_note]["releasing"] = True
@@ -135,6 +147,7 @@ if not ports:
     print("No MIDI ports found.")
     exit()
 
+# use the named device if given, otherwise just grab the first one
 if args.midi_device:
     matches = [p for p in ports if args.midi_device.lower() in p.lower()]
     port_name = matches[0] if matches else ports[0]
@@ -151,4 +164,5 @@ with sd.OutputStream(samplerate=SAMPLE_RATE, channels=1,
             if msg.type == "note_on" and msg.velocity > 0:
                 note_start(msg.note, msg.velocity)
             elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
+                # some controllers send note_on with velocity 0 instead of note_off
                 note_stop(msg.note, msg.velocity)
