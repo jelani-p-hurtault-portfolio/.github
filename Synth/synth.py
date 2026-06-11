@@ -13,16 +13,10 @@ BLOCK_SIZE = 256
 attack_samples = int(SAMPLE_RATE * ATTACK_MS / 1000)
 release_samples = int(SAMPLE_RATE * RELEASE_MS / 1000)
 
-current_freq = None
-note_on = False
-phase = 0.0
-envelope_pos = 0
-releasing = False
-release_start_amp = 0.0
-current_amp = 0.0
-note_velocity = 1.0
 lock = threading.Lock()
 waveform = "sawtooth"
+
+voices = {}
 
 def midi_to_freq(midi_note):
     return 440.0 * (2.0 ** ((midi_note - 69) / 12.0))
@@ -38,64 +32,60 @@ def get_sample(phase, waveform):
         return 2.0 * (phase - np.floor(phase + 0.5))
 
 def audio_callback(outdata, frames, time, status):
-    global phase, envelope_pos, releasing, current_amp, release_start_amp, note_on, current_freq
+    global voices
 
     output = np.zeros(frames, dtype=np.float32)
 
-    for i in range(frames):
-        with lock:
-            freq = current_freq
-            vel = note_velocity
-            wave = waveform
-            if freq is None:
-                output[i] = 0.0
-                continue
+    with lock:
+        finished = []
+        for note, v in voices.items():
+            for i in range(frames):
+                sample = get_sample(v["phase"], waveform)
 
-            sample = get_sample(phase, wave)
-
-            if not releasing and note_on:
-                if envelope_pos < attack_samples:
-                    amp = envelope_pos / max(attack_samples, 1)
-                    envelope_pos += 1
+                if not v["releasing"]:
+                    if v["env_pos"] < attack_samples:
+                        amp = v["env_pos"] / max(attack_samples, 1)
+                        v["env_pos"] += 1
+                    else:
+                        amp = 1.0
                 else:
-                    amp = 1.0
-            elif releasing:
-                progress = envelope_pos / max(release_samples, 1)
-                amp = release_start_amp * (1.0 - progress)
-                amp = max(amp, 0.0)
-                envelope_pos += 1
-                if envelope_pos >= release_samples:
-                    current_freq = None
-                    releasing = False
-                    note_on = False
-                    amp = 0.0
-            else:
-                amp = 0.0
+                    progress = v["env_pos"] / max(release_samples, 1)
+                    amp = v["release_amp"] * (1.0 - progress)
+                    amp = max(amp, 0.0)
+                    v["env_pos"] += 1
+                    if v["env_pos"] >= release_samples:
+                        finished.append(note)
+                        amp = 0.0
 
-            current_amp = amp
-            phase += freq / SAMPLE_RATE
-            phase -= np.floor(phase)
+                v["current_amp"] = amp
+                output[i] += sample * amp * v["velocity"] * AMPLITUDE
+                v["phase"] += v["freq"] / SAMPLE_RATE
+                v["phase"] -= np.floor(v["phase"])
 
-        output[i] = sample * amp * vel * AMPLITUDE
+        for note in finished:
+            del voices[note]
 
+    output = np.clip(output, -1.0, 1.0)
     outdata[:, 0] = output
 
 def note_start(midi_note, velocity):
-    global current_freq, note_on, envelope_pos, releasing, phase, note_velocity
     with lock:
-        current_freq = midi_to_freq(midi_note)
-        note_on = True
-        releasing = False
-        envelope_pos = 0
-        phase = 0.0
-        note_velocity = velocity / 127.0
+        voices[midi_note] = {
+            "freq": midi_to_freq(midi_note),
+            "phase": 0.0,
+            "env_pos": 0,
+            "releasing": False,
+            "release_amp": 0.0,
+            "current_amp": 0.0,
+            "velocity": velocity / 127.0,
+        }
 
-def note_stop():
-    global releasing, envelope_pos, release_start_amp
+def note_stop(midi_note):
     with lock:
-        releasing = True
-        envelope_pos = 0
-        release_start_amp = current_amp
+        if midi_note in voices:
+            voices[midi_note]["releasing"] = True
+            voices[midi_note]["release_amp"] = voices[midi_note]["current_amp"]
+            voices[midi_note]["env_pos"] = 0
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--midi-device", type=str, default=None)
@@ -135,4 +125,4 @@ with sd.OutputStream(samplerate=SAMPLE_RATE, channels=1,
             if msg.type == "note_on" and msg.velocity > 0:
                 note_start(msg.note, msg.velocity)
             elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
-                note_stop()
+                note_stop(msg.note)
