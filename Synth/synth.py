@@ -1,12 +1,18 @@
 import mido
-import sounddevice as sd
 
-print("MIDI input ports:")
-for port in mido.get_input_names():
-    print(" ", port)
+ports = mido.get_input_names()
 
-print()
-print("Audio output devices:")
-for i, dev in enumerate(sd.query_devices()):
-    if dev["max_output_channels"] > 0:
-        print(f"  {i}: {dev['name']}")
+if not ports:
+    print("No MIDI input ports found.")
+    exit()
+
+print("Available ports:")
+for p in ports:
+    print(" ", p)
+
+port_name = ports[0]
+print(f"\nListening on: {port_name}")
+
+with mido.open_input(port_name) as port:
+    for msg in port:
+        print(msg)
