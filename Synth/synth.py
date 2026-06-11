@@ -20,6 +20,7 @@ envelope_pos = 0
 releasing = False
 release_start_amp = 0.0
 current_amp = 0.0
+note_velocity = 1.0
 lock = threading.Lock()
 
 def midi_to_freq(midi_note):
@@ -35,6 +36,7 @@ def audio_callback(outdata, frames, time, status):
 
         with lock:
             freq = current_freq
+            vel = note_velocity
             if freq is None:
                 output[i] = 0.0
                 continue
@@ -60,20 +62,21 @@ def audio_callback(outdata, frames, time, status):
 
             current_amp = amp
 
-        output[i] = sample * amp * AMPLITUDE
+        output[i] = sample * amp * vel * AMPLITUDE
         phase += freq / SAMPLE_RATE
         phase -= np.floor(phase)
 
     outdata[:, 0] = output
 
-def note_start(midi_note):
-    global current_freq, note_on, envelope_pos, releasing, phase
+def note_start(midi_note, velocity):
+    global current_freq, note_on, envelope_pos, releasing, phase, note_velocity
     with lock:
         current_freq = midi_to_freq(midi_note)
         note_on = True
         releasing = False
         envelope_pos = 0
         phase = 0.0
+        note_velocity = velocity / 127.0
 
 def note_stop():
     global releasing, envelope_pos, release_start_amp
@@ -104,6 +107,6 @@ with sd.OutputStream(samplerate=SAMPLE_RATE, channels=1,
     with mido.open_input(port_name) as port:
         for msg in port:
             if msg.type == "note_on" and msg.velocity > 0:
-                note_start(msg.note)
+                note_start(msg.note, msg.velocity)
             elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
                 note_stop()
